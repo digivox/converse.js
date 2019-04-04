@@ -222,6 +222,9 @@ var _extension = {
 
   // Delete a model from `this.data`, returning it.
   destroy: function(model) {
+    if (this._itemName(model.id).startsWith('converse.omemosession-')) {
+        debugger;
+    }
     this.store.removeItem(this._itemName(model.id));
     var modelId = model.id.toString();
     for (var i = 0, id; i < this.records.length; i++) {
@@ -248,11 +251,17 @@ var _extension = {
     itemRe = new RegExp("^" + this.name.replace(/[\-\[\]\/\{\}\(\)\*\+\?\.\\\^\$\|]/g, "\\$&") + "-");
     
     // Remove id-tracking item (e.g., "foo").
+    if (this.name.startsWith('converse.omemosession-')) {
+        debugger;
+    }
     local.removeItem(this.name);
 
     // Match all data items (e.g., "foo-ID") and remove.
     for (var k in local) {
       if (itemRe.test(k)) {
+        if (k.startsWith('converse.omemosession-')) {
+            debugger;
+        }
         local.removeItem(k);
       }
     }

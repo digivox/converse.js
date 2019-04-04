@@ -888,6 +888,8 @@ converse.plugins.add('converse-omemo', {
                                 }
                             },
                             'error': (model, resp) => {
+                                alert("Could not fetch OMEMO session from cache, we'll generate a new one.");
+                                debugger;
                                 _converse.log(
                                     "Could not fetch OMEMO session from cache, we'll generate a new one.",
                                     Strophe.LogLevel.WARN
