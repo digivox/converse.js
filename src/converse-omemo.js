@@ -1220,12 +1220,15 @@ converse.plugins.add('converse-omemo', {
             })
         );
 
-        _converse.api.listen.on('afterTearDown', () => {
-            if (_converse.devicelists) {
-                _converse.devicelists.reset();
+        _converse.api.listen.on('clearSession', () => {
+            if (_converse.isUntrusted()) {
+                const noop = {'_clear': _.noop};
+                _converse.devicelists.each(l => l.devices.browserStorage._clear());
+                _.get(_converse, 'devicelists.browserStorage', noop)._clear();
+                _.get(_converse, 'omemo_store.browserStorage', noop)._clear();
             }
-            delete _converse.omemo_store;
         });
+
         _converse.api.listen.on('connected', registerPEPPushHandler);
         _converse.api.listen.on('renderToolbar', view => view.renderOMEMOToolbarButton());
         _converse.api.listen.on('statusInitialized', initOMEMO);

@@ -32809,6 +32809,7 @@ var __WEBPACK_AMD_DEFINE_FACTORY__, __WEBPACK_AMD_DEFINE_ARRAY__, __WEBPACK_AMD_
 
 //# sourceMappingURL=pluggable.js.map
 
+
 /***/ }),
 
 /***/ "./node_modules/process/browser.js":
@@ -50784,6 +50785,10 @@ _converse_headless_converse_core__WEBPACK_IMPORTED_MODULE_5__["default"].plugins
           this.model.sendChatState();
         }
 
+        if (_converse.isUntrusted()) {
+          this.model.messages.browserStorage._clear();
+        }
+
         try {
           this.model.destroy();
         } catch (e) {
@@ -51145,8 +51150,9 @@ _converse_headless_converse_core__WEBPACK_IMPORTED_MODULE_5__["default"].plugins
     ChatBoxViews: {
       closeAllChatBoxes() {
         const _converse = this.__super__._converse;
-        this.each(function (view) {
-          if (view.model.get('id') === 'controlbox' && (_converse.disconnection_cause !== _converse.LOGOUT || _converse.show_controlbox_by_default)) {
+        const keep_controlbox_open = _converse.disconnection_cause !== _converse.LOGOUT || _converse.show_controlbox_by_default;
+        this.each(view => {
+          if (view.model.get('id') === 'controlbox' && keep_controlbox_open) {
             return;
           }
 
@@ -54017,11 +54023,11 @@ _converse_headless_converse_core__WEBPACK_IMPORTED_MODULE_5__["default"].plugins
           return;
         }
 
+        const id = `converse.roomspanel-${_converse.bare_jid}`;
         this.roomspanel = new _converse.RoomsPanel({
           'model': new (_converse.RoomsPanelModel.extend({
-            'id': `converse.roomspanel${_converse.bare_jid}`,
-            // Required by web storage
-            'browserStorage': new Backbone.BrowserStorage[_converse.config.get('storage')](`converse.roomspanel${_converse.bare_jid}`)
+            'id': id,
+            'browserStorage': new Backbone.BrowserStorage[_converse.config.get('storage')](id)
           }))()
         });
         this.roomspanel.model.fetch();
@@ -54061,7 +54067,6 @@ _converse_headless_converse_core__WEBPACK_IMPORTED_MODULE_5__["default"].plugins
 
     _converse.api.settings.update({
       'auto_list_rooms': false,
-      'cache_muc_messages': true,
       'locked_muc_domain': false,
       'locked_muc_nickname': false,
       'muc_disable_moderator_commands': false,
@@ -56205,6 +56210,12 @@ _converse_headless_converse_core__WEBPACK_IMPORTED_MODULE_5__["default"].plugins
     _converse.api.listen.on('clearSession', () => {
       const view = _converse.chatboxviews.get('controlbox');
 
+      if (_converse.isUntrusted()) {
+        _.get(view, 'roomspanel.model.browserStorage', {
+          '_clear': _.noop
+        })._clear();
+      }
+
       if (view && view.roomspanel) {
         view.roomspanel.remove();
         delete view.roomspanel;
@@ -58050,12 +58061,18 @@ _converse_headless_converse_core__WEBPACK_IMPORTED_MODULE_0__["default"].plugins
       }
     }));
 
-    _converse.api.listen.on('afterTearDown', () => {
-      if (_converse.devicelists) {
-        _converse.devicelists.reset();
-      }
+    _converse.api.listen.on('clearSession', () => {
+      if (_converse.isUntrusted()) {
+        const noop = {
+          '_clear': _.noop
+        };
 
-      delete _converse.omemo_store;
+        _converse.devicelists.each(l => l.devices.browserStorage._clear());
+
+        _.get(_converse, 'devicelists.browserStorage', noop)._clear();
+
+        _.get(_converse, 'omemo_store.browserStorage', noop)._clear();
+      }
     });
 
     _converse.api.listen.on('connected', registerPEPPushHandler);
@@ -64103,6 +64120,14 @@ function addPromise(promise) {
   _converse.promises[promise] = _converse_headless_utils_core__WEBPACK_IMPORTED_MODULE_11__["default"].getResolveablePromise();
 }
 
+function isTestEnv() {
+  return _lodash_noconflict__WEBPACK_IMPORTED_MODULE_4___default.a.get(_converse.connection, 'service') === 'jasmine tests';
+}
+
+_converse.isUntrusted = function () {
+  return !_converse.config.get('trusted') || isTestEnv();
+};
+
 _converse.isUniView = function () {
   /* We distinguish between UniView and MultiView instances.
    *
@@ -64184,7 +64209,7 @@ function initClientConfig() {
   _converse.api.trigger('clientConfigInitialized');
 }
 
-_converse.initConnection = function () {
+function initConnection() {
   /* Creates a new Strophe.Connection instance if we don't already have one.
    */
   if (!_converse.connection) {
@@ -64212,7 +64237,26 @@ _converse.initConnection = function () {
    */
 
   _converse.api.trigger('connectionInitialized');
-};
+}
+
+function initSession() {
+  const id = 'converse.bosh-session';
+  _converse.session = new Backbone.Model({
+    id
+  });
+  _converse.session.browserStorage = new Backbone.BrowserStorage.session(id);
+
+  _converse.session.fetch();
+  /**
+   * Triggered once the session has been initialized. The session is a
+   * persistent object which stores session information in the browser storage.
+   * @event _converse#sessionInitialized
+   * @memberOf _converse
+   */
+
+
+  _converse.api.trigger('sessionInitialized');
+}
 
 function setUpXMLLogging() {
   strophe_js__WEBPACK_IMPORTED_MODULE_0__["Strophe"].log = function (level, msg) {
@@ -64235,8 +64279,7 @@ function setUpXMLLogging() {
 function finishInitialization() {
   initClientConfig();
   initPlugins();
-
-  _converse.initConnection();
+  initConnection(); // initSession();
 
   _converse.logIn();
 
@@ -64263,36 +64306,21 @@ function cleanup() {
   // Looks like _converse.initialized was called again without logging
   // out or disconnecting in the previous session.
   // This happens in tests. We therefore first clean up.
+  if (_converse.connection) {
+    delete _converse.connection;
+  }
+
   Backbone.history.stop();
-
-  if (_converse.chatboxviews) {
-    _converse.chatboxviews.closeAllChatBoxes();
-  }
-
   unregisterGlobalEventHandlers();
-  window.localStorage.clear();
-  window.sessionStorage.clear();
-
-  if (_converse.bookmarks) {
-    _converse.bookmarks.reset();
-  }
-
   delete _converse.controlboxtoggle;
 
   if (_converse.chatboxviews) {
     delete _converse.chatboxviews;
   }
 
-  _converse.connection.reset();
-
-  _converse.tearDown();
-
   _converse.stopListening();
 
   _converse.off();
-
-  delete _converse.config;
-  initClientConfig();
 }
 
 _converse.initialize = async function (settings, callback) {
@@ -64514,7 +64542,7 @@ _converse.initialize = async function (settings, callback) {
     'leading': true
   });
 
-  this.disconnect = function () {
+  this.finishDisconnection = function () {
     _converse.log('DISCONNECTED');
 
     delete _converse.connection.reconnecting;
@@ -64551,10 +64579,10 @@ _converse.initialize = async function (settings, callback) {
 
         return _converse.reconnect();
       } else {
-        return _converse.disconnect();
+        return _converse.finishDisconnection();
       }
     } else if (_converse.disconnection_cause === _converse.LOGOUT || !_lodash_noconflict__WEBPACK_IMPORTED_MODULE_4___default.a.isUndefined(reason) && reason === _lodash_noconflict__WEBPACK_IMPORTED_MODULE_4___default.a.get(strophe_js__WEBPACK_IMPORTED_MODULE_0__["Strophe"], 'ErrorCondition.NO_AUTH_MECH') || reason === "host-unknown" || reason === "remote-connection-failed" || !_converse.auto_reconnect) {
-      return _converse.disconnect();
+      return _converse.finishDisconnection();
     }
     /**
      * Triggered when the connection has dropped, but Converse will attempt
@@ -64719,12 +64747,9 @@ _converse.initialize = async function (settings, callback) {
   };
 
   this.clearSession = function () {
-    if (!_converse.config.get('trusted')) {
-      window.localStorage.clear();
-      window.sessionStorage.clear();
-    } else if (!_lodash_noconflict__WEBPACK_IMPORTED_MODULE_4___default.a.isUndefined(this.session) && this.session.browserStorage) {
-      this.session.browserStorage._clear();
-    }
+    _lodash_noconflict__WEBPACK_IMPORTED_MODULE_4___default.a.get(_converse, 'session.browserStorage', {
+      '_clear': _lodash_noconflict__WEBPACK_IMPORTED_MODULE_4___default.a.noop
+    })._clear();
     /**
      * Triggered once the session information has been cleared,
      * for example when the user has logged out or when Converse has
@@ -64737,15 +64762,9 @@ _converse.initialize = async function (settings, callback) {
   };
 
   this.logOut = function () {
-    _converse.clearSession();
-
     _converse.setDisconnectionCause(_converse.LOGOUT, undefined, true);
 
-    if (!_lodash_noconflict__WEBPACK_IMPORTED_MODULE_4___default.a.isUndefined(_converse.connection)) {
-      _converse.connection.disconnect();
-    } else {
-      _converse.tearDown();
-    } // Recreate all the promises
+    _converse.api.connection.disconnect(); // Recreate all the promises
 
 
     _lodash_noconflict__WEBPACK_IMPORTED_MODULE_4___default.a.each(_lodash_noconflict__WEBPACK_IMPORTED_MODULE_4___default.a.keys(_converse.promises), addPromise);
@@ -64895,7 +64914,12 @@ _converse.initialize = async function (settings, callback) {
     _converse.jid = _converse.connection.jid;
     _converse.bare_jid = strophe_js__WEBPACK_IMPORTED_MODULE_0__["Strophe"].getBareJidFromJid(_converse.connection.jid);
     _converse.resource = strophe_js__WEBPACK_IMPORTED_MODULE_0__["Strophe"].getResourceFromJid(_converse.connection.jid);
-    _converse.domain = strophe_js__WEBPACK_IMPORTED_MODULE_0__["Strophe"].getDomainFromJid(_converse.connection.jid);
+    _converse.domain = strophe_js__WEBPACK_IMPORTED_MODULE_0__["Strophe"].getDomainFromJid(_converse.connection.jid); // _converse.session.save({
+    //     'jid': _converse.connection.jid,
+    //     'bare_jid': Strophe.getBareJidFromJid(_converse.connection.jid),
+    //     'resource': Strophe.getResourceFromJid(_converse.connection.jid),
+    //     'domain': Strophe.getDomainFromJid(_converse.connection.jid)
+    // });
 
     _converse.api.trigger('setUserJID');
   };
@@ -65067,6 +65091,7 @@ _converse.initialize = async function (settings, callback) {
 
   this.restoreBOSHSession = function (jid_is_required) {
     /* Tries to restore a cached BOSH session. */
+    // if (!_.get(_converse.session.get('jid'))) {
     if (!this.jid) {
       const msg = "restoreBOSHSession: tried to restore a \"keepalive\" session " + "but we don't have the JID for the user!";
 
@@ -65081,9 +65106,8 @@ _converse.initialize = async function (settings, callback) {
       this.connection.restore(this.jid, this.onConnectStatusChanged);
       return true;
     } catch (e) {
-      _converse.log("Could not restore session for jid: " + this.jid + " Error message: " + e.message, strophe_js__WEBPACK_IMPORTED_MODULE_0__["Strophe"].LogLevel.WARN);
+      _converse.log("Could not restore session for jid: " + this.jid + " Error message: " + e.message, strophe_js__WEBPACK_IMPORTED_MODULE_0__["Strophe"].LogLevel.WARN); // this.clearSession(); // We want to clear presences (see #555)
 
-      this.clearSession(); // We want to clear presences (see #555)
 
       return false;
     }
@@ -65161,7 +65185,7 @@ _converse.initialize = async function (settings, callback) {
 
       if (!password) {
         if (this.auto_login) {
-          throw new Error("initConnection: If you use auto_login and " + "authentication='login' then you also need to provide a password.");
+          throw new Error("autoLogin: If you use auto_login and " + "authentication='login' then you also need to provide a password.");
         }
 
         _converse.setDisconnectionCause(strophe_js__WEBPACK_IMPORTED_MODULE_0__["Strophe"].Status.AUTHFAIL, undefined, true);
@@ -65223,10 +65247,10 @@ _converse.initialize = async function (settings, callback) {
     this.connection = settings.connection;
   }
 
-  if (_lodash_noconflict__WEBPACK_IMPORTED_MODULE_4___default.a.get(_converse.connection, 'service') === 'jasmine tests') {
+  if (isTestEnv()) {
     finishInitialization();
     return _converse;
-  } else if (!_lodash_noconflict__WEBPACK_IMPORTED_MODULE_4___default.a.isUndefined(_i18n__WEBPACK_IMPORTED_MODULE_6__["default"])) {
+  } else if (!_lodash_noconflict__WEBPACK_IMPORTED_MODULE_4___default.a.isUndefined(_i18n__WEBPACK_IMPORTED_MODULE_6__["default"]) && _converse.locales_url) {
     const url = _converse_headless_utils_core__WEBPACK_IMPORTED_MODULE_11__["default"].interpolate(_converse.locales_url, {
       'locale': _converse.locale
     });
@@ -65280,7 +65304,13 @@ _converse.api = {
      * @memberOf _converse.api.connection
      */
     'disconnect'() {
-      _converse.connection.disconnect();
+      if (_converse.connection) {
+        _converse.connection.disconnect();
+      } else {
+        _converse.tearDown();
+
+        _converse.clearSession();
+      }
     }
 
   },
@@ -70335,6 +70365,14 @@ _converse_headless_converse_core__WEBPACK_IMPORTED_MODULE_0__["default"].plugins
       if (_converse.presences) {
         _converse.presences.browserStorage._clear();
       }
+
+      if (_converse.isUntrusted()) {
+        _converse.roster.data.browserStorage._clear();
+
+        _converse.roster.browserStorage._clear();
+
+        _converse.rostergroups.browserStorage._clear();
+      }
     });
 
     _converse.api.listen.on('statusInitialized', reconnecting => {
@@ -70413,6 +70451,13 @@ _converse_headless_converse_core__WEBPACK_IMPORTED_MODULE_0__["default"].plugins
          *     const contacts = await _converse.api.contacts.get(
          *         ['buddy1@example.com', 'buddy2@example.com']
          *     )
+         *     // ...
+         * });
+         *
+         * @example
+         * // To return all contacts, simply call ``get`` without any parameters:
+         * _converse.api.listen.on('rosterContactsFetched', function () {
+         *     const contacts = await _converse.api.contacts.get();
          *     // ...
          * });
          *
@@ -70641,6 +70686,16 @@ _converse_core__WEBPACK_IMPORTED_MODULE_0__["default"].plugins.add('converse-vca
     _converse.api.listen.on('addClientFeatures', () => {
       _converse.api.disco.own.features.add(Strophe.NS.VCARD);
     });
+
+    _converse.api.listen.on('clearSession', () => {
+      if (_converse.isUntrusted()) {
+        _.get(_converse, 'vcards.browserStorage', {
+          '_clear': _.noop
+        })._clear();
+      }
+    });
+    /************************ BEGIN API ************************/
+
 
     _.extend(_converse.api, {
       /**

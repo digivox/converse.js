@@ -139,6 +139,14 @@ converse.plugins.add('converse-vcard', {
             _converse.api.disco.own.features.add(Strophe.NS.VCARD);
         });
 
+        _converse.api.listen.on('clearSession', () => {
+            if (_converse.isUntrusted()) {
+                _.get(_converse, 'vcards.browserStorage', {'_clear': _.noop})._clear();
+            }
+        });
+
+
+        /************************ BEGIN API ************************/
         _.extend(_converse.api, {
             /**
              * The XEP-0054 VCard API

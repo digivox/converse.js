@@ -12,17 +12,15 @@
         
         describe("Authentication", function () {
 
-            it("needs either a bosh_service_url a websocket_url or both", mock.initConverse((done, _converse) => {
-                const url = _converse.bosh_service_url;
-                const connection = _converse.connection;
-                delete _converse.bosh_service_url;
-                delete _converse.connection;
-                expect(_converse.initConnection).toThrow(
-                    new Error("initConnection: you must supply a value for either the bosh_service_url or websocket_url or both."));
-                _converse.bosh_service_url = url;
-                _converse.connection = connection;
-                done();
-            }));
+            it("needs either a bosh_service_url a websocket_url or both", async done => {
+                try {
+                    await converse.initialize({'locales_url': undefined});
+                } catch (e) {
+                    expect(e.message).toBe("initConnection: you must supply a value for either the bosh_service_url or websocket_url or both.");
+                    return done();
+                }
+                throw new Error("converse.initialize did not return a rejected promise");
+            });
 
             describe("with prebind", function () {
                 it("needs a jid when also using keepalive", mock.initConverse((done, _converse) => {

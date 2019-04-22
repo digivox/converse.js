@@ -307,6 +307,15 @@ function addPromise (promise) {
     _converse.promises[promise] = u.getResolveablePromise();
 }
 
+function isTestEnv () {
+    return _.get(_converse.connection, 'service') === 'jasmine tests';
+}
+
+_converse.isUntrusted = function () {
+   return (!_converse.config.get('trusted') || isTestEnv());
+}
+
+
 _converse.isUniView = function () {
     /* We distinguish between UniView and MultiView instances.
      *
@@ -390,7 +399,7 @@ function initClientConfig () {
     _converse.api.trigger('clientConfigInitialized');
 }
 
-_converse.initConnection = function () {
+function initConnection () {
     /* Creates a new Strophe.Connection instance if we don't already have one.
      */
     if (!_converse.connection) {
@@ -419,6 +428,21 @@ _converse.initConnection = function () {
 }
 
 
+function initSession () {
+   const id = 'converse.bosh-session';
+   _converse.session = new Backbone.Model({id});
+   _converse.session.browserStorage = new Backbone.BrowserStorage.session(id);
+   _converse.session.fetch();
+   /**
+    * Triggered once the session has been initialized. The session is a
+    * persistent object which stores session information in the browser storage.
+    * @event _converse#sessionInitialized
+    * @memberOf _converse
+    */
+   _converse.api.trigger('sessionInitialized');
+}
+
+
 function setUpXMLLogging () {
     Strophe.log = function (level, msg) {
         _converse.log(msg, level);
@@ -439,7 +463,8 @@ function setUpXMLLogging () {
 function finishInitialization () {
     initClientConfig();
     initPlugins();
-    _converse.initConnection();
+    initConnection();
+    // initSession();
     _converse.logIn();
     _converse.registerGlobalEventHandlers();
     if (!Backbone.history.started) {
@@ -462,27 +487,17 @@ function cleanup () {
    // Looks like _converse.initialized was called again without logging
    // out or disconnecting in the previous session.
    // This happens in tests. We therefore first clean up.
+   if (_converse.connection) {
+      delete _converse.connection;
+   }
    Backbone.history.stop();
-   if (_converse.chatboxviews) {
-      _converse.chatboxviews.closeAllChatBoxes();
-   }
    unregisterGlobalEventHandlers();
-   window.localStorage.clear();
-   window.sessionStorage.clear();
-   if (_converse.bookmarks) {
-      _converse.bookmarks.reset();
-   }
    delete _converse.controlboxtoggle;
    if (_converse.chatboxviews) {
       delete _converse.chatboxviews;
    }
-   _converse.connection.reset();
-   _converse.tearDown();
    _converse.stopListening();
    _converse.off();
-
-   delete _converse.config;
-   initClientConfig();
 }
 
 
@@ -677,7 +692,7 @@ _converse.initialize = async function (settings, callback) {
         _converse.logIn(null, true);
     }, 2000, {'leading': true});
 
-    this.disconnect = function () {
+    this.finishDisconnection = function () {
         _converse.log('DISCONNECTED');
         delete _converse.connection.reconnecting;
         _converse.connection.reset();
@@ -707,14 +722,14 @@ _converse.initialize = async function (settings, callback) {
                 _converse.api.trigger('will-reconnect');
                 return _converse.reconnect();
             } else {
-                return _converse.disconnect();
+                return _converse.finishDisconnection();
             }
         } else if (_converse.disconnection_cause === _converse.LOGOUT ||
                 (!_.isUndefined(reason) && reason === _.get(Strophe, 'ErrorCondition.NO_AUTH_MECH')) ||
                 reason === "host-unknown" ||
                 reason === "remote-connection-failed" ||
                 !_converse.auto_reconnect) {
-            return _converse.disconnect();
+            return _converse.finishDisconnection();
         }
         /**
          * Triggered when the connection has dropped, but Converse will attempt
@@ -854,12 +869,7 @@ _converse.initialize = async function (settings, callback) {
     };
 
     this.clearSession = function () {
-        if (!_converse.config.get('trusted')) {
-            window.localStorage.clear();
-            window.sessionStorage.clear();
-        } else if (!_.isUndefined(this.session) && this.session.browserStorage) {
-            this.session.browserStorage._clear();
-        }
+       _.get(_converse, 'session.browserStorage', {'_clear': _.noop})._clear();
         /**
          * Triggered once the session information has been cleared,
          * for example when the user has logged out or when Converse has
@@ -870,13 +880,8 @@ _converse.initialize = async function (settings, callback) {
     };
 
     this.logOut = function () {
-        _converse.clearSession();
         _converse.setDisconnectionCause(_converse.LOGOUT, undefined, true);
-        if (!_.isUndefined(_converse.connection)) {
-            _converse.connection.disconnect();
-        } else {
-            _converse.tearDown();
-        }
+        _converse.api.connection.disconnect();
         // Recreate all the promises
         _.each(_.keys(_converse.promises), addPromise);
         /**
@@ -1006,6 +1011,12 @@ _converse.initialize = async function (settings, callback) {
         _converse.bare_jid = Strophe.getBareJidFromJid(_converse.connection.jid);
         _converse.resource = Strophe.getResourceFromJid(_converse.connection.jid);
         _converse.domain = Strophe.getDomainFromJid(_converse.connection.jid);
+        // _converse.session.save({
+        //     'jid': _converse.connection.jid,
+        //     'bare_jid': Strophe.getBareJidFromJid(_converse.connection.jid),
+        //     'resource': Strophe.getResourceFromJid(_converse.connection.jid),
+        //     'domain': Strophe.getDomainFromJid(_converse.connection.jid)
+        // });
         _converse.api.trigger('setUserJID');
     };
 
@@ -1163,6 +1174,7 @@ _converse.initialize = async function (settings, callback) {
 
     this.restoreBOSHSession = function (jid_is_required) {
         /* Tries to restore a cached BOSH session. */
+        // if (!_.get(_converse.session.get('jid'))) {
         if (!this.jid) {
             const msg = "restoreBOSHSession: tried to restore a \"keepalive\" session "+
                 "but we don't have the JID for the user!";
@@ -1179,7 +1191,7 @@ _converse.initialize = async function (settings, callback) {
             _converse.log(
                 "Could not restore session for jid: "+
                 this.jid+" Error message: "+e.message, Strophe.LogLevel.WARN);
-            this.clearSession(); // We want to clear presences (see #555)
+            // this.clearSession(); // We want to clear presences (see #555)
             return false;
         }
     };
@@ -1267,7 +1279,7 @@ _converse.initialize = async function (settings, callback) {
             const password = _.isNil(credentials) ? (_converse.connection.pass || this.password) : credentials.password;
             if (!password) {
                 if (this.auto_login) {
-                    throw new Error("initConnection: If you use auto_login and "+
+                    throw new Error("autoLogin: If you use auto_login and "+
                         "authentication='login' then you also need to provide a password.");
                 }
                 _converse.setDisconnectionCause(Strophe.Status.AUTHFAIL, undefined, true);
@@ -1320,10 +1332,10 @@ _converse.initialize = async function (settings, callback) {
         this.connection = settings.connection;
     }
 
-    if (_.get(_converse.connection, 'service') === 'jasmine tests') {
+    if (isTestEnv()) {
         finishInitialization();
         return _converse;
-    } else if (!_.isUndefined(i18n)) {
+    } else if (!_.isUndefined(i18n) && _converse.locales_url) {
         const url = u.interpolate(_converse.locales_url, {'locale': _converse.locale});
         try {
             await i18n.fetchTranslations(_converse.locale, _converse.locales, url);
@@ -1371,7 +1383,12 @@ _converse.api = {
          * @memberOf _converse.api.connection
          */
         'disconnect' () {
-            _converse.connection.disconnect();
+            if (_converse.connection) {
+               _converse.connection.disconnect();
+            } else {
+               _converse.tearDown();
+               _converse.clearSession();
+            }
         },
     },
 
@@ -1904,3 +1921,5 @@ window.converse = converse;
  */
 window.dispatchEvent(new CustomEvent('converse-loaded'));
 export default converse;
+
+

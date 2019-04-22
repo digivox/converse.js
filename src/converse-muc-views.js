@@ -66,11 +66,11 @@ converse.plugins.add('converse-muc-views', {
                 if (this.roomspanel && u.isVisible(this.roomspanel.el)) {
                     return;
                 }
+                const id = `converse.roomspanel-${_converse.bare_jid}`;
                 this.roomspanel = new _converse.RoomsPanel({
                     'model': new (_converse.RoomsPanelModel.extend({
-                        'id': `converse.roomspanel${_converse.bare_jid}`, // Required by web storage
-                        'browserStorage': new Backbone.BrowserStorage[_converse.config.get('storage')](
-                            `converse.roomspanel${_converse.bare_jid}`)
+                        'id': id,
+                        'browserStorage': new Backbone.BrowserStorage[_converse.config.get('storage')](id)
                     }))()
                 });
                 this.roomspanel.model.fetch();
@@ -108,7 +108,6 @@ converse.plugins.add('converse-muc-views', {
         // configuration settings.
         _converse.api.settings.update({
             'auto_list_rooms': false,
-            'cache_muc_messages': true,
             'locked_muc_domain': false,
             'locked_muc_nickname': false,
             'muc_disable_moderator_commands': false,
@@ -2113,6 +2112,9 @@ converse.plugins.add('converse-muc-views', {
 
         _converse.api.listen.on('clearSession', () => {
             const view = _converse.chatboxviews.get('controlbox');
+            if (_converse.isUntrusted()) {
+                _.get(view, 'roomspanel.model.browserStorage', {'_clear': _.noop})._clear();
+            }
             if (view && view.roomspanel) {
                 view.roomspanel.remove();
                 delete view.roomspanel;

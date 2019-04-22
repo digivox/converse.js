@@ -1239,6 +1239,9 @@ converse.plugins.add('converse-chatview', {
                     this.setChatState(_converse.INACTIVE);
                     this.model.sendChatState();
                 }
+                if (_converse.isUntrusted()) {
+                    this.model.messages.browserStorage._clear();
+                }
                 try {
                     this.model.destroy();
                 } catch (e) {

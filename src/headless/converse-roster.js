@@ -924,6 +924,11 @@ converse.plugins.add('converse-roster', {
             if (_converse.presences) {
                 _converse.presences.browserStorage._clear();
             }
+            if (_converse.isUntrusted()) {
+                _converse.roster.data.browserStorage._clear();
+                _converse.roster.browserStorage._clear();
+                _converse.rostergroups.browserStorage._clear();
+            }
         });
 
         _converse.api.listen.on('statusInitialized', (reconnecting) => {
@@ -996,6 +1001,13 @@ converse.plugins.add('converse-roster', {
                  *     const contacts = await _converse.api.contacts.get(
                  *         ['buddy1@example.com', 'buddy2@example.com']
                  *     )
+                 *     // ...
+                 * });
+                 *
+                 * @example
+                 * // To return all contacts, simply call ``get`` without any parameters:
+                 * _converse.api.listen.on('rosterContactsFetched', function () {
+                 *     const contacts = await _converse.api.contacts.get();
                  *     // ...
                  * });
                  *
