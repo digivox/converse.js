@@ -82,13 +82,15 @@ converse.plugins.add('converse-headline', {
             initialize () {
                 this.initDebounced();
 
-                this.disable_mam = true; // Don't do MAM queries for this box
+                this.model.disable_mam = true; // Don't do MAM queries for this box
                 this.model.messages.on('add', this.onMessageAdded, this);
                 this.model.on('show', this.show, this);
                 this.model.on('destroy', this.hide, this);
                 this.model.on('change:minimized', this.onMinimizedChanged, this);
 
-                this.render().insertHeading().fetchMessages().insertIntoDOM().hide();
+                this.render().insertHeading()
+                this.updateAfterMessagesFetched();
+                this.insertIntoDOM().hide();
                 _converse.api.trigger('chatBoxInitialized', this);
             },
 

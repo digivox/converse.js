@@ -327,6 +327,8 @@ converse.plugins.add('converse-chatboxes', {
             },
 
             clearMessages () {
+                const ids = this.messages.map(m => m.cid);
+                ids.forEach(id => this.messages.get(id).destroy());
                 this.messages.browserStorage._clear();
                 this.messages.reset();
             },

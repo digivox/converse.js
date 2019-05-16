@@ -81,7 +81,11 @@ converse.plugins.add('converse-message-view', {
             },
 
             initialize () {
-                this.debouncedRender = _.debounce(this.render, 50);
+                this.debouncedRender = _.debounce(() => {
+                    if (this.model.collection) {
+                        this.render();
+                    }
+                }, 50);
                 if (this.model.vcard) {
                     this.model.vcard.on('change', this.debouncedRender, this);
                 }
