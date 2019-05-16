@@ -392,6 +392,28 @@
 
         describe("A Groupchat", function () {
 
+            it("clears cached messages when it reconnects",
+                mock.initConverse(
+                    null, ['rosterGroupsFetched'], {},
+                    async function (done, _converse) {
+
+                await test_utils.waitUntil(() => test_utils.openAndEnterChatRoom(_converse, 'lounge', 'localhost', 'dummy'));
+                const view = _converse.chatboxviews.get('lounge@localhost');
+                const message = 'Hello world',
+                        nick = mock.chatroom_names[0],
+                        msg = $msg({
+                        'from': 'lounge@localhost/'+nick,
+                        'id': (new Date()).getTime(),
+                        'to': 'dummy@localhost',
+                        'type': 'groupchat'
+                    }).c('body').t(message).tree();
+
+                        debugger;
+                await view.model.onMessage(msg);
+                await new Promise((resolve, reject) => view.once('messageInserted', resolve));
+                done()
+            }));
+
             it("is opened when an xmpp: URI is clicked inside another groupchat",
                 mock.initConverse(
                     null, ['rosterGroupsFetched'], {},

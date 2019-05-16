@@ -294,7 +294,7 @@ converse.plugins.add('converse-chatboxes', {
             initMessages () {
                 this.messages = new _converse.Messages();
                 const storage = _converse.config.get('storage');
-                this.messages.browserStorage = new Backbone.BrowserStorage[storage](
+                this.messages.browserStorage = new Backbone.BrowserStorage.session(
                     `converse.messages-${this.get('jid')}-${_converse.bare_jid}`);
                 this.messages.chatbox = this;
 
@@ -324,6 +324,20 @@ converse.plugins.add('converse-chatboxes', {
                         'error': _.flow(this.afterMessagesFetched.bind(this), resolve)
                     });
                 });
+            },
+
+            clearMessages () {
+                this.messages.browserStorage._clear();
+                this.messages.reset();
+            },
+
+            close () {
+                this.clearMessages();
+                try {
+                    this.destroy();
+                } catch (e) {
+                    _converse.log(e, Strophe.LogLevel.ERROR);
+                }
             },
 
             validate (attrs, options) {

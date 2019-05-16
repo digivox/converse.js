@@ -241,13 +241,18 @@ converse.plugins.add('converse-muc', {
             },
 
             async onConnectionStatusChanged () {
-                if (this.get('connection_status') === converse.ROOMSTATUS.ENTERED &&
+                if (this.get('connection_status') === converse.ROOMSTATUS.CONNECTED) {
+                    // Once we've connected to a chatroom, we clear all the
+                    // previous chat messages. Otherwise we might get gaps in
+                    // the message history. Applies mostly to reconnections.
+                    this.clearMessages();
+                } else if (
+                    this.get('connection_status') === converse.ROOMSTATUS.ENTERED &&
                         _converse.auto_register_muc_nickname &&
-                        !this.get('reserved_nick')) {
+                        !this.get('reserved_nick') &&
+                        await _converse.api.disco.supports(Strophe.NS.MUC_REGISTER, this.get('jid'))) {
 
-                    if (await _converse.api.disco.supports(Strophe.NS.MUC_REGISTER, this.get('jid'))) {
-                        this.registerNickname()
-                    }
+                    this.registerNickname()
                 }
             },
 
@@ -1485,7 +1490,7 @@ converse.plugins.add('converse-muc', {
              * disconnected, so that they will be properly entered again
              * when fetched from session storage.
              */
-            _converse.chatboxes.each(function (model) {
+            _converse.chatboxes.each(model => {
                 if (model.get('type') === _converse.CHATROOMS_TYPE) {
                     model.save('connection_status', converse.ROOMSTATUS.DISCONNECTED);
                 }
